@@ -1,7 +1,5 @@
 import nitcorn::restful
 import authtoken
-import core
-import sendmail
 import nitcorn
 
 class Authentification
@@ -28,14 +26,14 @@ super RestfulAction
 		return resp
 	end
 
-	#Enregistrement
-	#http://localhost:8080/signup?email=test1&pseudonyme=test2&password=test3
-	fun signup(email,pseudonyme,password : String): HttpResponse
+	#SIGNUP
+	#http://localhost:8080/signup?email=test1&username=test2&password=test3
+	fun signup(email,username,password : String): HttpResponse
 	is restful do
 		var resp = new HttpResponse(200)
 
 		var db = new Sqlite3DB.open("auth.db")
-		var result = db.add_user_account(email,pseudonyme,password)
+		var result = db.add_user_account(email,username,password)
 		db.close
 
 		resp.body = "{result}"
@@ -43,7 +41,7 @@ super RestfulAction
 		return resp
 	end
 
-	#Vérification du token
+	#AUTHENTIFICATION TOKEN
 	#localhost:8080/authtoken?token=96fb642fd85d5ef5591c374ff12aadc4
 	fun authtoken(token : String): HttpResponse
 	is restful do
@@ -58,7 +56,7 @@ super RestfulAction
 		return resp
 	end
 
-	#Deconnecter le token
+	#LOGOUT TOKEN
 	fun logout(token : String): HttpResponse
 	is restful do
 		var resp = new HttpResponse(200)
@@ -72,7 +70,7 @@ super RestfulAction
 		return resp
 	end
 
-	#changement mot de passe en ayant l'ancien
+	#CHANGE PASSWORD WITH OLDPASSWORD AND NEWPASSWORD
 	fun changepassword(idUser, oldPassword,newPassword : String): HttpResponse
 	is restful do
 		var resp = new HttpResponse(200)
@@ -87,31 +85,28 @@ super RestfulAction
 	end
 
 
-
-	#http://localhost:8080/requestchangepassword?tokenuser=96fb642fd85d5ef5591c374ff12aadc4
-	#demander un changement de mot si mot de passe oublié (envoir mail avec lien)
-	fun requestchangepassword(tokenuser : String) : HttpResponse
+	#CHANGE PASSWORD REQUEST
+	#http://localhost:8080/requestchangepassword?emailorusername=maxime.vergne@viacesi.fr
+	fun requestchangepassword(emailorusername : String) : HttpResponse
 	is restful do
 		var resp = new HttpResponse(200)
 
 		var iduser = "false"
 
 		var db = new Sqlite3DB.open("auth.db")
-		iduser = db.check_token(tokenuser)
+		iduser = db.getIdUserByEmailOrUsername(emailorusername)
 		if iduser != "false" 
 		then
 			#génération d'un token de changement de motdepasse
-			var resulttoken = db.change_password_genere(iduser)
+			var tokencp = db.change_password_genere(iduser)
 			resp.body = "okay !"
 			
 			#récupération email user
 			var usermail = db.getEmailUser(iduser)
 
-			if sendmail_is_available then
-		    var mail = new Mail("{usermail}", "Changement de votre mot de passe ", "Pour changer votre mot de passe lien : http://localhost:8080/pagechangepassword?tokencp={resulttoken}")
-		    	mail.to.add "{usermail}"
-		    	mail.send
-			else print "please install sendmail"
+			var mymail = new MyMail(usermail,"Changement de votre mot de passe","Pour changer votre mot de passe lien : http://localhost:8080/pagechangepassword?tokencp={tokencp}")
+			db.sendMail(mymail)
+			
 		end
 		
 		db.close
@@ -119,7 +114,8 @@ super RestfulAction
 		return resp
 	end
 
-	#page de changement de mot de passe (lien email)
+
+	#PAGE CHANGE PASSWORD WITH TOKEN CHANGE PASSWORD
 	fun pagechangepassword(tokencp : String) : HttpResponse
 	is restful do
 
@@ -164,7 +160,7 @@ super RestfulAction
 	end
 	
 
-	#changement du password post
+	#CHANGE PASSWORD POST
 	fun changepasswordpost(tokencp,password,passwordconfirmation : String) : HttpResponse
 	is restful do
 		var resp = new HttpResponse(200)

@@ -2,11 +2,12 @@ module authtoken
 import sqlite3
 import md5
 import sha1
+import sendmail
 
 redef class Sqlite3DB
 	#attribut salt
 	var salt = "secretsaltmontreal1a2z3e4r5t6y7u8i9o"
-	#initialisation création des tables
+	#INITIALISATION
 	init
 	do
 		create_tables_users
@@ -14,15 +15,15 @@ redef class Sqlite3DB
 		create_table_change_password
 	end
 
-	#Création de la table users
+	#CREATE TABLE USERS
 	private fun create_tables_users
 	do
-		assert create_table("IF NOT EXISTS user (id_user INTEGER PRIMARY KEY AUTOINCREMENT, email_user TEXT, pseudonyme_user TEXT, password_user TEXT)") else
+		assert create_table("IF NOT EXISTS user (id_user INTEGER PRIMARY KEY AUTOINCREMENT, email_user TEXT, username_user TEXT, password_user TEXT)") else
 			print error or else "?"
 		end
 	end
 
-	#Création de la table token des users
+	#CREATE TABLE TOKEN
 	private fun create_tables_token
 	do
 		assert create_table("IF NOT EXISTS user_token (id_user INTEGER, token_user TEXT)") else
@@ -30,7 +31,7 @@ redef class Sqlite3DB
 		end
 	end
 
-	#Création de la table id
+	#CREATE TABLE CHANGE PASSWORD
 	private fun create_table_change_password
 	do
 		assert create_table("IF NOT EXISTS user_change_password (id_user INTEGER, id_change_password TEXT)") else
@@ -39,23 +40,23 @@ redef class Sqlite3DB
 	end
 
 
-	#Vérification si un compte existe pour l'enregistrement (return true si le compte exist sinon false)
-	private fun check_account_exist(email,pseudonyme : String) : Bool
+	#CHECK IF ACCOUNT EXIST EMAIL AND USERNAME
+	private fun check_account_exist(email,username : String) : Bool
 	do
 		var result:Bool = false
-		var stmt = select("email_user, pseudonyme_user FROM user WHERE email_user={email.to_sql_string} OR pseudonyme_user={pseudonyme.to_sql_string}")
+		var stmt = select("email_user, username_user FROM user WHERE email_user={email.to_sql_string} OR username_user={username.to_sql_string}")
 		
 		assert stmt != null else print error or else "?"
 
 		for row in stmt do
-			if row[0].to_s == email or row[1].to_s == pseudonyme then
+			if row[0].to_s == email or row[1].to_s == username then
 				result = true
 			end
 		end
 		return result
 	end
 
-	#Génération d'un token (return string du token)
+	#CREATE TOKEN
 	private fun createToken: String
 	do
 		var token1 = 123456.rand.to_s
@@ -66,15 +67,15 @@ redef class Sqlite3DB
 		return token
 	end
 
-	#Enregistrement d'un compte retourne boolean (return true si okay)
-	fun add_user_account(email,pseudonyme,password : String) : Bool
+	#ADD NEW ACCOUNT BY EMAIL USERNAME AND PASSWORD
+	fun add_user_account(email,username,password : String) : Bool
 	do
 		#password sécurité
 		password = password + salt
 		password = password.sha1_hexdigest
 		#compte exist
-		if check_account_exist(email,pseudonyme) == false then
-			assert insert("INTO user(email_user, pseudonyme_user, password_user) VALUES ({email.to_sql_string}, {pseudonyme.to_sql_string}, {password.to_sql_string})") else
+		if check_account_exist(email,username) == false then
+			assert insert("INTO user(email_user, username_user, password_user) VALUES ({email.to_sql_string}, {username.to_sql_string}, {password.to_sql_string})") else
 				print error or else "?"
 			end
 			return true
@@ -83,8 +84,8 @@ redef class Sqlite3DB
 		return false
 	end
 
-	#Login d'un compte return token ou null (return token user sinon false en string)
-	fun login(email,pseudonyme,password :String) : String
+	#LOGIN ACCOUNT BY EMAIL OR USERNAME AND PASSWORD
+	fun login(email,username,password :String) : String
 	do
 		var id_user = null
 		var result = false
@@ -92,13 +93,13 @@ redef class Sqlite3DB
 		password = password + salt
 		password = password.sha1_hexdigest
 
-		var stmt = select("id_user, email_user, pseudonyme_user, password_user FROM user WHERE (email_user={email.to_sql_string} AND password_user={password.to_sql_string}) OR (pseudonyme_user={pseudonyme.to_sql_string} AND password_user={password.to_sql_string})")
+		var stmt = select("id_user, email_user, username_user, password_user FROM user WHERE (email_user={email.to_sql_string} AND password_user={password.to_sql_string}) OR (username_user={username.to_sql_string} AND password_user={password.to_sql_string})")
 		assert stmt != null else print error or else "?"
 		for row in stmt do
 			if row[1].to_s == email and row[3].to_s == password then
 				result = true
 				id_user = row[0].to_s 
-			else if row[2].to_s == pseudonyme and row[3].to_s == password then
+			else if row[2].to_s == username and row[3].to_s == password then
 				result = true
 				id_user = row[0].to_s 
 			end
@@ -121,7 +122,7 @@ redef class Sqlite3DB
 		return "false"
 	end
 
-	#obtenir email user par iduser (return email de l'utilisateur en string)
+	#GET EMAIL BY IDUSER
 	fun getEmailUser(iduser: String) : String
 	do	
 		var stmt = select("email_user FROM user WHERE id_user = {iduser.to_sql_string}")
@@ -132,8 +133,21 @@ redef class Sqlite3DB
 		return ""
 	end
 
+	#GET IDUSER BY EMAIL OR USERNAME
+	fun getIdUserByEmailOrUsername(emailorusername : String) : String
+	do
+		var stmt = select("id_user,email_user,username_user FROM user WHERE (email_user = {emailorusername.to_sql_string} OR username_user = {emailorusername.to_sql_string})")
+		assert stmt != null else print error or else "?"
+		for row in stmt do
+			if row[1].to_s == emailorusername then
+				return row[0].to_s
+			end
+		end
+		return ""
+	end
 
-	#Logout retourne un boolean si token = null (return true si déco de l'utilisateur et suppresion du token user)
+
+	#LOOGOUT ACCOUNT BY TOKEN
 	fun logout(token : String) : Bool
 	do
 		var resultExistUser = check_token(token)
@@ -148,7 +162,7 @@ redef class Sqlite3DB
 		return false
 	end
 	
-	#Check du token retourne iduser ou false (return String si token exist sinon string avec false)
+	#CHECK ACCOUNT EXIST BY TOKEN USER
 	fun check_token(token : String) : String
 	do
 		var stmt = select("token_user,id_user FROM user_token WHERE token_user = {token.to_sql_string}")
@@ -162,7 +176,7 @@ redef class Sqlite3DB
 		return "false"
 	end
 
-	#Changement du mot de passe à partir du compte (return true si changement de mot de passe)
+	#CHANGE OLDPASSWORD BY NEW PASSWORD
 	fun changepassword(idUser, oldPassword, newPassword : String) : Bool
 	do
 		var validinfo:Bool = false
@@ -192,7 +206,7 @@ redef class Sqlite3DB
 
 	end
 
-	#génération d'un token change password pour le changement de mot de passe (return string token change password)
+	#GENERATION TABLE PASSWORD GENERE WITH IDUSER
 	fun change_password_genere(iduser: String) : String
 	do
 		var token = createToken
@@ -203,16 +217,16 @@ redef class Sqlite3DB
 		return token
 	end
 
-	#changement du mot de passe avec tokencp généré (return true : changement de mot de passe okay)
-	fun change_password(token, password : String) : Bool
+	#CHANGE PASSWORD WITH TOKENCP AND PASSWORD
+	fun change_password(tokencp, password : String) : Bool
 	do
-		var stmt = select("id_user, id_change_password FROM user_change_password WHERE id_change_password={token.to_sql_string}")
+		var stmt = select("id_user, id_change_password FROM user_change_password WHERE id_change_password={tokencp.to_sql_string}")
 		
 
 		assert stmt != null else print error or else "?"
 
 		for row in stmt do
-			if row[1].to_s == token then
+			if row[1].to_s == tokencp then
 			
 				var iduser = row[0].to_s
 				password = password + salt
@@ -222,7 +236,7 @@ redef class Sqlite3DB
 					print error or else "?"
 				end
 
-				assert execute("DELETE FROM user_change_password WHERE id_change_password = {token.to_sql_string}") else
+				assert execute("DELETE FROM user_change_password WHERE id_change_password = {tokencp.to_sql_string}") else
 					print error or else "?"
 				end
 
@@ -234,7 +248,7 @@ redef class Sqlite3DB
 		return false
 	end
 
-	#check si tokencp exist (return true = token change password exist)
+	#TOKENCP EXIST ?
 	fun check_token_cp(tokencp: String) : Bool
 	do
 		var stmt = select("id_change_password FROM user_change_password ")
@@ -250,10 +264,22 @@ redef class Sqlite3DB
 		return false
 	end
 
-	#Liste users (return list Users)
-	fun liste_users : Array[Users]
+
+
+	fun sendMail(mymail : MyMail)
 	do
-		var stmt = select("id_user, email_user, pseudonyme_user FROM user")
+		if sendmail_is_available then
+		    var mail = new Mail("{mymail.usermail}", "{mymail.titre}", "{mymail.contenu}")
+		    	mail.to.add "{mymail.usermail}"
+		    	mail.send
+		else print "please install sendmail"
+		
+	end
+
+	#LIST USERS
+	fun list_users : Array[Users]
+	do
+		var stmt = select("id_user, email_user, username_user FROM user")
 		assert stmt != null else print error or else "?"
 		
 		var users = new Array[Users]
@@ -271,5 +297,11 @@ end
 class Users
 	var iduser: String
 	var email : String
-	var pseudonyme : String
+	var username : String
+end
+
+class MyMail
+	var usermail : String
+	var titre : String
+	var contenu : String
 end
